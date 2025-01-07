@@ -1,0 +1,8 @@
+.idea
+/upload/*
+/uploadSearch/*
+weight.npy
+/RSSCN7
+venv
+/uploadSearch/*
+weights.npy
