@@ -1,28 +1,26 @@
 import trimesh
 from scipy.special import sph_harm
 import numpy as np
-
+from sklearn.decomposition import PCA
 
 def carac_fourier_3D(path: str) -> np.ndarray:
     mesh = trimesh.load(path)
 
-    # Normalization (translation, échelle)
-    mesh.apply_translation(-mesh.center_mass)  # Centrer à l'origine
-    mesh.apply_scale(1 / mesh.scale)  # Normaliser l'échelle
+    # Normalization (translation, scale)
+    mesh.apply_translation(-mesh.center_mass)  # Center at origin
+    mesh.apply_scale(1 / mesh.scale)  # Normalize scale
 
-    # Transformation de Fourier
+    # Fourier Transform
     fourier_coeff = np.fft.fftn(mesh.vertices)  # Return complex numbers
-    fourier_magnitudes = np.abs(fourier_coeff)  # Magnitude invariant a la rotation
+    fourier_magnitudes = np.abs(fourier_coeff)  # Magnitude invariant to rotation
 
     return fourier_magnitudes
-
 
 def factorial(n):
     """Calculate factorial of a number using recursion."""
     if n == 0:
         return 1
     return n * factorial(n - 1)
-
 
 def calc_3d_zernike_basis(n, l, m, r, theta, phi):
     """
@@ -50,7 +48,6 @@ def calc_3d_zernike_basis(n, l, m, r, theta, phi):
     Y_lm = sph_harm(m, l, phi, theta)
 
     return R_nl * Y_lm
-
 
 def calculate_3d_zernike_moments(mesh, max_order=10):
     """
@@ -102,20 +99,19 @@ def calculate_3d_zernike_moments(mesh, max_order=10):
 
     return moments
 
-
-def analyze_shape(mesh_path, max_order=10):
+def carac_zernike(path, max_order=10):
     """
     Load mesh and calculate its 3D Zernike moments.
 
     Args:
-        mesh_path (str): Path to the mesh file.
+        path (str): Path to the mesh file.
         max_order (int): Maximum order of Zernike moments to compute.
 
     Returns:
         dict: Dictionary containing Zernike moments indexed by (n, l, m).
     """
     # Load mesh
-    mesh = trimesh.load(mesh_path)
+    mesh = trimesh.load(path)
 
     # Ensure mesh is watertight and oriented
     if not mesh.is_watertight:
@@ -126,11 +122,41 @@ def analyze_shape(mesh_path, max_order=10):
 
     return moments
 
+def caracGlobale(mesh_path: str, max_order=10):
+    """
+    Extract global characteristics from a 3D mesh using Fourier and Zernike moments.
+
+    Args:
+        mesh_path (str): Path to the mesh file.
+        max_order (int): Maximum order of Zernike moments to compute.
+        reduce_dim (int): If not None, reduce the feature vector to this dimension using PCA.
+
+    Returns:
+        np.ndarray: Combined and optionally reduced feature vector.
+    """
+    # Compute Fourier characteristics
+    fourier3D = carac_fourier_3D(path=mesh_path)
+    fourier_vector = fourier3D.flatten()  # Flatten to 1D array
+    fourier_vector = fourier_vector / np.linalg.norm(fourier_vector)  # Normalize
+
+    # Compute Zernike moments
+    zernike_moments = carac_zernike(path=mesh_path, max_order=max_order)
+    zernike_vector = np.array(list(zernike_moments.values()))  # Convert to 1D array
+    zernike_vector = zernike_vector / np.linalg.norm(zernike_vector)  # Normalize
+
+    mean_fourier = np.mean(fourier_vector)  # Mean of Fourier features
+    mean_zernike = np.mean(zernike_vector)  # Mean of Zernike features
+
+    # Combine the means into a feature vector
+    combined_features = np.array([mean_fourier, mean_zernike])
+
+    return combined_features
+
+
 
 if __name__ == '__main__':
     # Example usage
-    file = "3D Models/All Models/ampho.obj"
-    moments = analyze_shape(file, max_order=10)
-    print("3D Zernike Moments:")
-    for key, value in moments.items():
-        print(f"Order (n, l, m) = {key}: Moment = {value}")
+    file = "3D Models/All Models/bluevase.obj"
+    features = caracGlobale(file, max_order=10)  # Reduce to 50 dimensions
+    print("Combined Feature Vector:")
+    print(features)

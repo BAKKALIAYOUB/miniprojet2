@@ -1,4 +1,3 @@
-import base64
 import jwt
 from datetime import datetime, timedelta
 from fastapi import FastAPI, Body, Header, UploadFile, File, Form
@@ -11,9 +10,7 @@ from fastapi.security import OAuth2PasswordRequestForm, OAuth2PasswordBearer
 from CalculeCaracteristics import caracGlobale
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import JSONResponse
-from PIL import Image, ImageFilter
 import os
-from io import BytesIO
 from pymongo import MongoClient
 from pydantic import BaseModel
 import bcrypt
@@ -22,22 +19,16 @@ from typing import Optional
 
 # Initialize the FastAPI app
 app = FastAPI(debug=True)
-app.mount("/images", StaticFiles(directory="RSSCN7"), name="images")
+app.mount("/3D Models", StaticFiles(directory="3D Models"), name="images")
 app.mount("/uploadSearch", StaticFiles(directory="uploadSearch"), name="uploadSearch")
 
 # Directory to save uploaded files
 UPLOAD_DIR = "upload"
 UPLOAD_DIR2 = "uploadSearch"
-WEIGHTS_PATH = "./weights.npy"
-FEATURES_PATH = './image_features.csv'
+FEATURES_PATH = './features.csv'
 ALPHA = 0.8
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 os.makedirs(UPLOAD_DIR2, exist_ok=True)
-
-if not os.path.exists(WEIGHTS_PATH):
-    features = pd.read_csv(FEATURES_PATH).iloc[:, 2:]
-    initial_weights = np.ones(features.shape)
-    np.save(WEIGHTS_PATH, initial_weights)
 
 # MongoDB client
 client = MongoClient("mongodb://localhost:27017")
@@ -150,7 +141,7 @@ async def get_current_user_id(token: str = Depends(oauth2_scheme)) -> str:
 
 
 # Function to calculate distance between feature vectors (Euclidean or Cosine)
-def calcule_distance(vect1, vect2, weights=None):
+def calcule_distance(vect1, vect2):
     """
     Calculate the distance between two vectors with optional weighted distance.
 
@@ -162,18 +153,12 @@ def calcule_distance(vect1, vect2, weights=None):
     Returns:
     float: Weighted Euclidean distance
     """
-    if weights is not None:
-        # Apply weights element-wise to each vector
-        weighted_vect1 = vect1 * weights[0]  # Use the first row of weights
-        weighted_vect2 = vect2 * weights[0]  # Use the first row of weights
 
-        # Calculate distance using weighted vectors
-        dist = np.linalg.norm(weighted_vect1 - weighted_vect2)
-    else:
-        # If no weights, calculate standard Euclidean distance
-        dist = np.linalg.norm(vect1 - vect2)
+    # If no weights, calculate standard Euclidean distance
+    dist = np.linalg.norm(vect1 - vect2)
 
     return dist
+
 
 @app.delete("/deleteImage")
 async def delete_image(image_url: str, authorization: str = Header(None)):
@@ -210,6 +195,8 @@ async def delete_image(image_url: str, authorization: str = Header(None)):
         return JSONResponse(content={"message": "Image deleted successfully"}, status_code=200)
     except Exception as e:
         raise HTTPException(status_code=500, detail="Error deleting image")
+
+
 def getSimilarImages(imagePath):
     """
     Get similar images from the database by comparing feature vectors.
@@ -224,13 +211,10 @@ def getSimilarImages(imagePath):
     images_features = pd.read_csv(FEATURES_PATH)
     features = images_features.iloc[:, 2:].values
 
-    # Load weights
-    weights = np.load(WEIGHTS_PATH)
 
     # Calculate the weighted distances
-    # Calculate the weighted distances
     distances = np.array([
-        calcule_distance(carac, feat, weights=weights[index:index + 1])  # Pass weights for this specific row
+        calcule_distance(carac, feat)  # Pass weights for this specific row
         for index, feat in enumerate(features)
     ])
 
@@ -248,6 +232,7 @@ def getSimilarImages(imagePath):
 
     similar_images = similar_images.reset_index()
     return similar_images[['index', 'ImagePath', 'Category', 'distance']]
+
 
 @app.get("/getImages_for_search")
 async def get_images(authorization: str = Header(None)):
@@ -280,7 +265,8 @@ async def get_images(authorization: str = Header(None)):
     image_files = [f for f in os.listdir(user_dir) if os.path.isfile(user_dir / f)]
     for filename in image_files:
         image_url = f"http://localhost:8000/uploadSearch/{user_id}/{filename}"
-        image_data.append({"url": image_url, "category": "uncategorized"})  # You can label them as "uncategorized" or similar
+        image_data.append(
+            {"url": image_url, "category": "uncategorized"})  # You can label them as "uncategorized" or similar
 
     # Get the categories subdirectories (i.e., each category has its own folder)
     categories = [category for category in os.listdir(user_dir) if os.path.isdir(user_dir / category)]
@@ -295,6 +281,8 @@ async def get_images(authorization: str = Header(None)):
 
     # Return the list of images
     return JSONResponse(content={"images": image_data})
+
+
 @app.get("/getImages")
 async def get_images(authorization: str = Header(None)):
     """
@@ -464,29 +452,6 @@ async def upload_file(file_path: str = Body(..., embed=True)):
     }
 
 
-@app.post("/feedback")
-async def update_weights(image_index: int = Body(..., embed=True)):
-    # Load features and weights
-    images_features = pd.read_csv(FEATURES_PATH)
-    features = images_features.iloc[:, 2:].values  # Feature columns only (skip ImagePath and Category)
-    weights = np.load(WEIGHTS_PATH)
-
-    # Validate image index
-    if image_index < 0 or image_index >= len(features):
-        return {"error": "Image index out of range"}
-
-    # Get the flagged image's features
-    flagged_features = features[image_index]
-
-    # Update weights for the specific image
-    weights[image_index, :] = weights[image_index, :] * ALPHA + (1 - ALPHA) * flagged_features
-
-    # Save the updated weights
-    np.save(WEIGHTS_PATH, weights)
-
-    return {"message": "Weights updated successfully"}
-
-
 @app.get("/categories")
 async def get_categories():
     images_features = pd.read_csv(FEATURES_PATH)
@@ -504,139 +469,3 @@ async def get_images_by_categories(category: str):
         images_path_by_categories = image_features[image_features['Category'] == category]["ImagePath"].tolist()
 
     return {"images": images_path_by_categories}
-
-
-@app.post("/apply_transformation")
-async def apply_transformation(
-        file: UploadFile = File(...),
-        transformation: str = Form(...),
-        authorization: str = Header(None)
-):
-    if authorization is None:
-        raise HTTPException(status_code=400, detail="Authorization token is missing")
-
-    # Extract token from Authorization header
-    token = authorization.split("Bearer ")[-1]
-
-    # Decode the token and get the user_id
-    user_id = decode_jwt(token)
-    try:
-        # Charger l'image depuis le fichier uploadé
-        image = Image.open(BytesIO(await file.read()))
-        transformed_image = None
-
-        # Appliquer la transformation
-        if transformation == "crop":
-            # Recadrer au centre
-            width, height = image.size
-            left = width // 4
-            top = height // 4
-            right = 3 * width // 4
-            bottom = 3 * height // 4
-            transformed_image = image.crop((left, top, right, bottom))
-        elif transformation == "resize":
-            # Redimensionner à 300x300
-            transformed_image = image.resize((300, 300))
-        elif transformation == "rotate":
-            # Rotation de 90 degrés
-            transformed_image = image.rotate(90)
-        elif transformation == "blur":
-            # Ajouter un effet de flou
-            transformed_image = image.filter(ImageFilter.BLUR)
-        else:
-            raise HTTPException(status_code=400, detail="Transformation invalide")
-
-        file_name, file_extension = os.path.splitext(file.filename)
-        output_file_name = f"{file_name}_{transformation}{file_extension}"
-
-        # Créer le dossier de l'utilisateur si nécessaire
-        user_folder = os.path.join(UPLOAD_DIR2, user_id)
-        os.makedirs(user_folder, exist_ok=True)
-
-        # Enregistrer l'image transformée dans le dossier de l'utilisateur
-        output_path = os.path.join(user_folder, output_file_name)
-        transformed_image.save(output_path)
-
-        # Retourner l'image transformée
-        return FileResponse(output_path)
-
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Erreur lors de la transformation : {str(e)}")
-
-
-def apply_gabor_filter(image: np.ndarray) -> np.ndarray:
-    # Convert image to grayscale if it's not already
-    if len(image.shape) > 2:
-        gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-    else:
-        gray = image
-
-    # Apply multiple Gabor filters with varied parameters
-    filtered_images = []
-    for theta in [0, np.pi / 4, np.pi / 2, np.pi * 3 / 4]:
-        for sigma in [1.0, 2.0]:
-            kernel = cv2.getGaborKernel(
-                (31, 31),  # Larger kernel size
-                sigma,  # Scale
-                theta,  # Orientation
-                10.0,  # Wavelength
-                0.5,  # Aspect ratio
-                0,  # Phase offset
-                ktype=cv2.CV_32F
-            )
-
-            # Filter the image
-            filtered = cv2.filter2D(gray, cv2.CV_32F, kernel)
-            filtered_images.append(filtered)
-
-    # Combine filtered images
-    combined = np.mean(filtered_images, axis=0)
-
-    # Normalize and apply adaptive thresholding
-    normalized = cv2.normalize(combined, None, 0, 255, cv2.NORM_MINMAX)
-    _, binary = cv2.threshold(normalized.astype(np.uint8), 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
-
-    return binary
-
-
-@app.get("/characteristics/{idx}")
-async def get_characteristics(idx: int):
-    try:
-        # Read the CSV file containing image features
-        images_features = pd.read_csv(FEATURES_PATH)
-
-        # Ensure idx is within bounds
-        if idx < 0 or idx >= len(images_features):
-            raise HTTPException(status_code=404, detail="Index out of range")
-
-        # Get the image path from the DataFrame
-        image_path = images_features.iloc[idx]["ImagePath"]
-        image = cv2.imread("RSSCN7" + image_path)
-
-        # Check if the image was loaded successfully
-        if image is None:
-            raise HTTPException(status_code=404, detail="Image not found")
-
-        # Convert image to grayscale for Gabor filter application
-        gray_image = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-
-        # Apply Gabor filter to the image
-        gabor_filtered_image = apply_gabor_filter(gray_image)
-
-        # Convert the filtered image to a base64-encoded PNG image
-        _, buffer = cv2.imencode('.png', gabor_filtered_image)
-        gabor_base64 = base64.b64encode(buffer).decode('utf-8')
-
-        # Return the binary Gabor-filtered image and the histogram data
-        histograms = {}
-        for i, color in enumerate(('b', 'g', 'r')):
-            hist = cv2.calcHist([image], [i], None, [256], [0, 256]).flatten().tolist()
-            histograms[color] = hist
-
-        return {
-            "histogram_colors": histograms,
-            "gabor_image_base64": gabor_base64
-        }
-
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error processing request: {str(e)}")

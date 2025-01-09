@@ -2,7 +2,9 @@
 /upload/*
 /uploadSearch/*
 weight.npy
-/RSSCN7
+/3D Models
+/All Models
 venv
 /uploadSearch/*
+.
 weights.npy
