@@ -1,5 +1,4 @@
 "use client";
-
 import { useState, useEffect } from "react";
 import { Chart, BarController, BarElement, LinearScale, CategoryScale, Title, Legend } from 'chart.js/auto';
 import Navbar from "../components/navBar";
@@ -13,6 +12,7 @@ export default function App() {
   const [activeSection, setActiveSection] = useState("search");
   const [uploadedImage, setUploadedImage] = useState(null);
   const [results, setResults] = useState([]);
+  const [sim_images, set_sim_images] = useState([]);
   const [desablerecherhcemethode, setDesablerecherhcemethode] = useState(false);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isImageModalOpen, setIsImageModalOpen] = useState(false);
@@ -21,48 +21,54 @@ export default function App() {
   const [error, setError] = useState(null);
   const [gaborImage, setGaborImage] = useState(null);
 
+  const extractImageName = (url) => {
+    return url.split("/").pop(); // Extracts the last part of the URL (e.g., "y5160_clay_vase.jpg")
+  };
+
   const handleSelectImage = (image) => {
     const previewUrl = `${image.url}`;
     setUploadedImage({ file: image, preview: previewUrl });
     setIsModalOpen(false);
-    console.log(previewUrl)
+
+    // Extract and log the image name
+    const imageName = extractImageName(image.url);
+    console.log("Selected Image Name:", imageName);
   };
 
-useEffect(() => {
-  // Fetch uploaded images for the current user
-  const fetchUploadedImages = async () => {
-    try {
-      // Retrieve the JWT token from sessionStorage
-      const token = sessionStorage.getItem("jwtToken");
+  useEffect(() => {
+    // Fetch uploaded images for the current user
+    const fetchUploadedImages = async () => {
+      try {
+        // Retrieve the JWT token from sessionStorage
+        const token = sessionStorage.getItem("jwtToken");
 
-      if (!token) {
-        setError("Utilisateur non authentifié.");
-        return;
+        if (!token) {
+          setError("Utilisateur non authentifié.");
+          return;
+        }
+
+        // Make a request to the server with the user's token
+        const response = await axios.get("/getImages_for_search", {
+          headers: {
+            Authorization: `Bearer ${token}` // Include the token in the Authorization header
+          },
+        });
+
+        // Update the state with the fetched images
+        const images = response.data.images || [];
+        console.log("IMAGES FROM BACKEND:", images);
+        setUploadedImages(images);
+        setImagesInFolder(images);
+      } catch (error) {
+        // Handle errors
+        setError(
+          error.response?.data?.detail || "Erreur lors du chargement des images."
+        );
       }
+    };
 
-      // Make a request to the server with the user's token
-      const response = await axios.get("/getImages_for_search", {
-        headers: {
-          Authorization: `Bearer ${token}` // Include the token in the Authorization header
-        },
-      });
-
-      // Update the state with the fetched images
-      const images = response.data.images || [];
-      console.log("IMAGES FROM BACKEND:", images);
-      setUploadedImages(images);
-      setImagesInFolder(images);
-    } catch (error) {
-      // Handle errors
-      setError(
-        error.response?.data?.detail || "Erreur lors du chargement des images."
-      );
-    }
-  };
-
-  fetchUploadedImages(); // Fetch images when the component mounts
-}, []);
-
+    fetchUploadedImages(); // Fetch images when the component mounts
+  }, []);
 
   useEffect(() => {
     return () => {
@@ -71,17 +77,6 @@ useEffect(() => {
       }
     };
   }, [uploadedImage]);
-
-  const handleImageUpload = (event) => {
-    const file = event.target.files[0];
-    if (file) {
-      setError(null);
-      setUploadedImage({
-        file,
-        preview: URL.createObjectURL(file),
-      });
-    }
-  };
 
   const handleSearch = async () => {
     setError(null);
@@ -96,14 +91,18 @@ useEffect(() => {
       setIsLoading(true);
       setDesablerecherhcemethode(true);
 
-      const url = uploadedImage.file.url
-      const path = url.replace("http://localhost:8000/uploadSearch", "");
+      const url = uploadedImage.file.url;
+      const path = url.replace("http://localhost:8000/uploadSearch", ""); // Keep the `/uploadSearch` part
 
-
+      console.log("Sending path to backend:", path); // Debugging
       const response = await axios.post("/upload", { file_path: path });
 
       const similarImages = response.data.similar_images || [];
+      console.log("hi", response.data);
       setResults(similarImages);
+      const images_path = response.data.ImagePath
+      console.log(images_path)
+      set_sim_images(images_path)
 
       if (similarImages.length === 0) {
         setError("Aucune image similaire trouvée.");
@@ -272,42 +271,41 @@ useEffect(() => {
             <h2 className="text-xl font-semibold">Résultats de la Recherche</h2>
             <div className="grid grid-cols-3 gap-4 mt-4">
               {!isLoading && results.length > 0 && (
-                results.map((image, idx) => (
+                results.map((image, idx) => {
+                  // Use the corresponding image URL from sim_images
+                  const imageUrl = sim_images[idx];
+                  return (
                     <div key={idx} className="bg-white shadow-lg rounded-md p-4">
                       <img
-                          src={`http://127.0.0.1:8000/images/${image.ImagePath}`}
-                          alt={image.title || "Image"}
-                          className="w-full h-80 object-cover rounded-md cursor-pointer"
-                          onClick={() => openImageModal(image)}
+                        src={encodeURI(imageUrl)} // Encode the URL to handle spaces
+                        alt={image.title || "Image"}
+                        className="w-full h-80 object-cover rounded-md cursor-pointer"
+                        onClick={() => openImageModal(image)
+                        }
                       />
                       <h3 className="text-center mt-2 text-black">{image.title || "Untitled"}</h3>
                       <h2 className="text-center mt-2">{image.distance || "N/A"}</h2>
                       <h2 className="text-center mt-2">{image.Category || "Unknown"}</h2>
                       <button
-                          className="mt-2 p-2 border rounded bg-red-600 text-white hover:bg-red-500"
-                          onClick={() => handleIrrelevantChange(image.index)}
-                      >
-                        Irrelevant
-                      </button>
-                      <button
-                          className="p-2 border rounded bg-blue-600 text-white hover:bg-blue-500"
-                          onClick={() => {
-                            // Construct the download URL
-                            const downloadUrl = `http://127.0.0.1:8000/download/${image.ImagePath}`;
+                        className="p-2 border rounded bg-blue-600 text-white hover:bg-blue-500"
+                        onClick={() => {
+                          // Construct the download URL
+                          const downloadUrl = `http://127.0.0.1:8000/download/${imageUrl}`;
 
-                            // Create a temporary link element
-                            const link = document.createElement('a');
-                            link.href = downloadUrl;  // Set the link's href to the download URL
-                            link.download = image.ImagePath; // Optionally set the download filename (same as image name)
+                          // Create a temporary link element
+                          const link = document.createElement('a');
+                          link.href = downloadUrl;  // Set the link's href to the download URL
+                          link.download = imageUrl.split("/").pop(); // Set the download filename (same as image name)
 
-                            // Trigger the click to download the file
-                            link.click();
-                          }}
+                          // Trigger the click to download the file
+                          link.click();
+                        }}
                       >
                         Download
                       </button>
                     </div>
-                ))
+                  );
+                })
               )}
 
               {!isLoading && results.length === 0 && (
@@ -321,13 +319,12 @@ useEffect(() => {
       </div>
     ),
   };
-  console.log(uploadedImages)
-  return (
-      <div className="min-h-screen flex flex-col">
-        <Navbar activeSection={activeSection} setActiveSection={setActiveSection}/>
 
-        <div className="flex-1 bg-gray-50 py-6">
-          <div className="container mx-auto px-6">{sections[activeSection]}</div>
+  return (
+    <div className="min-h-screen flex flex-col">
+      <Navbar activeSection={activeSection} setActiveSection={setActiveSection} />
+      <div className="flex-1 bg-gray-50 py-6">
+        <div className="container mx-auto px-6">{sections[activeSection]}</div>
       </div>
 
       {/* Images Uploaded by the user */}
@@ -391,7 +388,6 @@ useEffect(() => {
           </div>
         </div>
       )}
-
     </div>
   );
 }

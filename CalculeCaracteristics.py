@@ -156,7 +156,7 @@ def caracGlobale(mesh_path: str, max_order=10):
 
 if __name__ == '__main__':
     # Example usage
-    file = "3D Models/All Models/bluevase.obj"
+    file = "3D Models/Lekythos/likithos.obj"
     features = caracGlobale(file, max_order=10)  # Reduce to 50 dimensions
     print("Combined Feature Vector:")
     print(features)

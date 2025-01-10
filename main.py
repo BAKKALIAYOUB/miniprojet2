@@ -16,12 +16,16 @@ from pydantic import BaseModel
 import bcrypt
 from fastapi import Depends, HTTPException, status
 from typing import Optional
+from pathlib import Path
+
 
 # Initialize the FastAPI app
 app = FastAPI(debug=True)
 app.mount("/3D Models", StaticFiles(directory="3D Models"), name="images")
+app.mount("/images1", StaticFiles(directory="2D folder"), name="images1")
 app.mount("/uploadSearch", StaticFiles(directory="uploadSearch"), name="uploadSearch")
-
+BASE_2D_PATH = Path("2D folder")
+BASE_3D_MODELS_PATH = Path("3D Models")
 # Directory to save uploaded files
 UPLOAD_DIR = "upload"
 UPLOAD_DIR2 = "uploadSearch"
@@ -51,7 +55,7 @@ origins = [
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000"],  # Autorisez votre frontend
+    allow_origins=origins,  # Autorisez votre frontend
     allow_credentials=True,
     allow_methods=["*"],  # Autorise toutes les méthodes
     allow_headers=["*"],  # Autorise tous les headers
@@ -197,7 +201,7 @@ async def delete_image(image_url: str, authorization: str = Header(None)):
         raise HTTPException(status_code=500, detail="Error deleting image")
 
 
-def getSimilarImages(imagePath):
+def getSimilarImages(imagePath, obj_file_path):
     """
     Get similar images from the database by comparing feature vectors.
     """
@@ -205,12 +209,11 @@ def getSimilarImages(imagePath):
     img = cv2.imread(imagePath)
 
     # Extract features for the uploaded image
-    carac = caracGlobale(img).flatten()
+    carac = caracGlobale(obj_file_path).flatten()
 
     # Load the features of all images from the CSV file
     images_features = pd.read_csv(FEATURES_PATH)
     features = images_features.iloc[:, 2:].values
-
 
     # Calculate the weighted distances
     distances = np.array([
@@ -223,16 +226,15 @@ def getSimilarImages(imagePath):
 
     # Sort images by distance (smallest distance = most similar)
     similar_images = images_features.sort_values(by='distance').head(10)
-
+    print("Columns in CSV:", images_features.columns.tolist())
     # Ensure the full image path is returned
     base_url = "http://127.0.0.1:8000/images"
-    similar_images['ImagePath'] = similar_images['ImagePath'].apply(
+    similar_images['modelpath'] = similar_images['modelpath'].apply(
         lambda x: x.replace("\\", "/").lstrip("/")  # Remove leading slash and replace backslashes
     )
 
     similar_images = similar_images.reset_index()
-    return similar_images[['index', 'ImagePath', 'Category', 'distance']]
-
+    return similar_images[['index', 'modelpath', 'Category', 'distance']]
 
 @app.get("/getImages_for_search")
 async def get_images(authorization: str = Header(None)):
@@ -383,10 +385,13 @@ async def get_uploaded_images(
 
 
 @app.post("/upload_Search")
-async def upload_file_for_search(file: UploadFile = File(...), category: str = Form(...),
-                                 authorization: str = Header(None)):
+async def upload_file_for_search(
+    file: UploadFile = File(...),
+    authorization: str = Header(None),
+):
     """
-    Endpoint to upload a file and save it to a user-specific and category-specific directory.
+    Endpoint to upload a file and search for a corresponding 2D image in the entire 2D folder.
+    Files are saved in a user-specific category directory.
     """
     if authorization is None:
         raise HTTPException(status_code=400, detail="Authorization token is missing")
@@ -400,32 +405,60 @@ async def upload_file_for_search(file: UploadFile = File(...), category: str = F
     if not user_id:
         raise HTTPException(status_code=401, detail="Invalid or expired token")
 
-    # Ensure category is provided
-    if not category:
-        raise HTTPException(status_code=400, detail="Category is missing")
+    # Extract the model name (without extension) from the uploaded file
+    model_name = Path(file.filename).stem.lower()  # Convert to lowercase
 
-    # Define the directory path based on user_id and category
-    user_category_dir = f"uploadSearch/{user_id}/{category}"
+    # Look for the corresponding image in the `2D folder` and its subdirectories
+    image_extensions = ["png", "jpg", "jpeg"]  # Supported 2D image formats
+    image_found = False
+    matching_image_path = None
+    category = None
 
-    # Ensure the directory exists
-    os.makedirs(user_category_dir, exist_ok=True)
+    # Recursively search through all subdirectories of the 2D folder
+    for ext in image_extensions:
+        for potential_image_path in BASE_2D_PATH.rglob(f"{model_name}.{ext}"):  # Search recursively
+            if potential_image_path.exists():
+                # Extract the category from the subdirectory name
+                category = potential_image_path.parent.name  # Get the parent directory name (category)
+                # Define the user-specific category directory
+                user_category_dir = f"uploadSearch/{user_id}/{category}"
+                os.makedirs(user_category_dir, exist_ok=True)  # Ensure the directory exists
 
-    # Save the file in the appropriate directory
-    file_location = os.path.join(user_category_dir, file.filename)
-    with open(file_location, "wb") as buffer:
-        buffer.write(await file.read())
+                # Copy the 2D image to the user-specific category directory
+                destination_path = Path(user_category_dir) / f"{model_name}.{ext}"
+                with open(potential_image_path, "rb") as src, open(destination_path, "wb") as dst:
+                    dst.write(src.read())
 
-    # Return the relative path of the uploaded file
-    return {"file_path": f"/uploadSearch/{user_id}/{category}/{file.filename}"}
+                image_found = True
+                matching_image_path = destination_path
+                break
+        if image_found:
+            break
+
+    if not image_found:
+        return {
+            "message": f"File uploaded successfully, but no corresponding 2D image found for {model_name}."
+        }
+
+    return {
+        "message": f"File uploaded successfully, and 2D image {model_name}.{ext} saved to {user_category_dir}. Category: {category}",
+        "2d_image_path": f"/uploadSearch/{user_id}/{category}/{model_name}.{ext}",
+        "category": category,
+    }
+
+
 
 
 @app.post("/upload")
 async def upload_file(file_path: str = Body(..., embed=True)):
     """
-    Endpoint to process the file path and find similar images.
+    Endpoint to process the file path, find the corresponding 3D model, and retrieve similar images.
     """
+    # Normalize the path and replace backslashes with forward slashes
+    normalized_path = os.path.normpath(file_path).replace("\\", "/")
+
     # Construct the full path for the uploaded image
-    image_path = os.path.join(UPLOAD_DIR2, file_path.lstrip("/"))
+    image_path = os.path.join(UPLOAD_DIR2, normalized_path.lstrip("/"))
 
     print(f"Received file path: {image_path}")
 
@@ -433,20 +466,57 @@ async def upload_file(file_path: str = Body(..., embed=True)):
     if not os.path.exists(image_path):
         return {"error": "Image not found."}
 
-    # Get similar images based on the uploaded image
-    similar_images = getSimilarImages(image_path)
+    # Extract the category from the file path (e.g., "Pyxis" from "/uploadSearch/67804fa35785a55e21f60d67/Pyxis/london e 774.jpg")
+    path_parts = normalized_path.lstrip("/").split("/")
+    if len(path_parts) < 3:  # Expecting /uploadSearch/user_id/category/image_name
+        return {"error": "Invalid file path format. Expected /uploadSearch/user_id/category/image_name."}
 
+    upload_search_dir = path_parts[0]  # Should be "uploadSearch"
+    user_id = path_parts[1]  # Not used in this context
+    category = path_parts[1]  # Extract the category (e.g., "Pyxis")
+    print("cat",category)
+    image_name = path_parts[-1]  # Extract the image name (e.g., "london e 774.jpg")
+
+    # Remove the file extension to get the base name (e.g., "london e 774")
+    base_name = os.path.splitext(image_name)[0]
+
+    # Construct the path to the category subdirectory in the 3D Models folder
+    category_3d_path = BASE_3D_MODELS_PATH / category
+
+    # Search for the corresponding .obj file in the category subdirectory
+    obj_file_path = None
+    if category_3d_path.exists() and category_3d_path.is_dir():
+        for file in category_3d_path.iterdir():
+            if file.is_file() and file.name.lower().startswith(base_name.lower()) and file.name.lower().endswith(".obj"):
+                obj_file_path = file
+                break
+
+    if not obj_file_path:
+        return {"error": f"No corresponding 3D model found for {base_name} in category {category}."}
+
+    print(f"Found 3D model: {obj_file_path}")
+    print("himage path",image_path)
+    # Get similar images based on the uploaded image
+    similar_images = getSimilarImages(image_path, str(obj_file_path))
+    print("hi",similar_images)
+    def map_obj_to_image_path(obj_path):
+        # Replace the .obj extension with .jpg or .png
+        return obj_path.replace(".obj", ".jpg")
+    # Construct URLs for similar images
     # Construct URLs for similar images
     image_urls = []
-    for image in similar_images['ImagePath']:
-        # First, replace backslashes with forward slashes using string.replace
-        image_path_with_forward_slashes = image.replace('\\', '/')
-        # Now format the URL using the modified image path
-        image_url = f"http://127.0.0.1:8000/uploadSearch{image_path_with_forward_slashes}"
+    for image in similar_images['modelpath']:
+        # Map the .obj path to a 2D image path
+        image_path_2d = map_obj_to_image_path(image)
+        # Replace backslashes with forward slashes
+        image_path_with_forward_slashes = image_path_2d.replace("\\", "/")
+        # Format the URL
+        image_url = f"http://127.0.0.1:8000/images1/{image_path_with_forward_slashes}"
         image_urls.append(image_url)
 
     return {
         "image_path": image_path,  # Full image path for reference
+        "3d_model_path": str(obj_file_path),  # Path to the corresponding 3D model
         "similar_images": similar_images.to_dict(orient='records'),  # Format similar images as needed
         "ImagePath": image_urls  # URLs for similar images with forward slashes
     }

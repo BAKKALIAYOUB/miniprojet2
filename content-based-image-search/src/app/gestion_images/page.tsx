@@ -69,7 +69,7 @@ export default function ImagesPage() {
 const handleUpload = (event: React.FormEvent<HTMLFormElement>) => {
   event.preventDefault();
   const formData = new FormData(event.currentTarget);
-  const files = formData.getAll("image") as File[];
+  const files = formData.getAll("image") as File[]; // Récupérer tous les fichiers
   const category = formData.get("category") as string;
 
   if (!category) {
@@ -82,16 +82,22 @@ const handleUpload = (event: React.FormEvent<HTMLFormElement>) => {
     return;
   }
 
+  // Convertir tous les noms de fichiers en minuscules
+  files.forEach((file) => {
+    console.log("Fichier téléchargé:", file.name.toLowerCase());
+  });
+
   setIsLoading((prev) => ({ ...prev, upload: true }));
   setError((prev) => ({ ...prev, upload: undefined }));
 
   const uploadData = new FormData();
   files.forEach((file) => {
-    uploadData.append("file", file);
+    // Renommer le fichier en minuscules avant de l'envoyer
+    uploadData.append("file", new File([file], file.name.toLowerCase(), { type: file.type }));
   });
-  uploadData.append("category", category);  // Ensure the category is appended here
+  uploadData.append("category", category);  // Assurez-vous que la catégorie est ajoutée ici
 
-  // Get the JWT token from sessionStorage
+  // Récupérer le token JWT depuis sessionStorage
   const token = sessionStorage.getItem("jwtToken");
   console.log("Token:", token);
 
@@ -100,31 +106,31 @@ const handleUpload = (event: React.FormEvent<HTMLFormElement>) => {
     return;
   }
 
-  // Send the files to the backend using axios.then() and catch()
+  // Envoyer les fichiers au backend en utilisant axios
   axios
     .post("/upload_Search", uploadData, {
       headers: {
         "Content-Type": "multipart/form-data",
-        "Authorization": `Bearer ${token}`,  // Add the JWT token in the Authorization header
+        "Authorization": `Bearer ${token}`,  // Ajouter le token JWT dans l'en-tête Authorization
       },
     })
     .then((response) => {
       console.log("Response data:", response.data);
 
       if (response.status === 200) {
-        // Add images directly to `uploadedImages` to display them immediately
+        // Ajouter directement les images téléchargées à l'affichage
         const uploadedImages = files.map((file) => ({
           id: crypto.randomUUID(),
-          name: file.name,
-          url: URL.createObjectURL(file), // Create a local URL for preview
-          category: category,  // Use the selected category
+          name: file.name.toLowerCase(), // Nom du fichier en minuscules
+          url: URL.createObjectURL(file), // Créer une URL locale pour l'aperçu
+          category: category,  // Utiliser la catégorie sélectionnée
         }));
 
-        // Update state with the new images
+        // Mettre à jour l'état avec les nouvelles images
         setUploadedImages((prev) => [...prev, ...uploadedImages]);
         setImagesInFolder((prev) => [...prev, ...uploadedImages]);
 
-        // Call fetchUploadedImages after the upload to get the updated list of images from the backend
+        // Appeler fetchUploadedImages après l'upload pour obtenir la liste mise à jour des images du backend
         fetchUploadedImages1();
       }
     })
@@ -172,6 +178,9 @@ const fetchUploadedImages1 = async () => {
   }
 };
 
+const extractImageName = (url) => {
+  return url.split("/").pop(); // Extracts the last part of the URL (e.g., "y5160_clay_vase.jpg")
+};
 
 useEffect(() => {
   const fetchUploadedImages = async () => {
@@ -331,33 +340,31 @@ useEffect(() => {
           </div>
 
           {/* Category Buttons */}
-          <div className="flex space-x-4 mb-8">
-            <button
-              onClick={() => handleFilter("")}
-              disabled={isLoading.images}
-              className={`px-6 py-3 rounded-md ${
-                selectedCategory === ""
-                  ? "bg-indigo-600 text-white"
-                  : "bg-gray-200 text-gray-700"
-              } disabled:opacity-50`}
-            >
-              Tout
-            </button>
-            {categories.map((category) => (
-              <button
-                key={category}
-                onClick={() => handleFilter(category)}
-                disabled={isLoading.images}
-                className={`px-6 py-3 rounded-md ${
-                  selectedCategory === category
-                    ? "bg-indigo-600 text-white"
-                    : "bg-gray-200 text-gray-700"
-                } disabled:opacity-50`}
-              >
-                {category}
-              </button>
-            ))}
-          </div>
+          <div className="flex space-x-4 mb-8 overflow-x-auto py-2">
+  <button
+    onClick={() => handleFilter("")}
+    className={`px-4 py-2 rounded-md text-sm transition-all duration-300 ${
+      selectedCategory === ""
+        ? "bg-indigo-600 text-white"
+        : "bg-gray-200 text-gray-800 hover:bg-gray-300"
+    }`}
+  >
+    Toutes
+  </button>
+  {categories.map((category, index) => (
+    <button
+      key={index}
+      onClick={() => handleFilter(category)}
+      className={`px-4 py-2 rounded-md text-sm transition-all duration-300 ${
+        selectedCategory === category
+          ? "bg-indigo-600 text-white"
+          : "bg-gray-200 text-gray-800 hover:bg-gray-300"
+      }`}
+    >
+      {category}
+    </button>
+  ))}
+</div>
 
           {/* Images Loading State */}
           {isLoading.images && (
@@ -374,41 +381,45 @@ useEffect(() => {
           )}
 
           {/* Image Display */}
-          {!isLoading.images && !error.images && (
+            {!isLoading.images && !error.images && (
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
                 {filteredImages.length > 0 ? (
-                    filteredImages.map((image, index) => (
-                        <div key={index} className="bg-white rounded-xl shadow-lg overflow-hidden">
-                          <div className="relative">
-                            <img
-                                src={image.url}
-                                alt={`Image ${index + 1}`}
-                                loading="lazy"
-                                className="w-full h-56 object-cover transition-transform duration-300 hover:scale-105"
-                            />
-                            {/* Delete Button - Positioned to the Right */}
-                            <button
-                                onClick={() => handleDeleteImage(image.url)}
-                                className="absolute top-2 right-2 p-2 bg-white rounded-full shadow-md hover:bg-gray-100 transition-all"
-                                style={{background: 'none', border: 'none', cursor: 'pointer'}}
-                            >
-                              <FaTrash color="red" size={20}/> {/* Delete icon */}
-                            </button>
-                          </div>
-                          <div className="p-4">
-                            <h3 className="text-lg font-semibold text-gray-800">Image {index + 1}</h3>
-                            <p className="text-sm text-gray-600">{image.category}</p>
-                          </div>
+                  filteredImages.map((image, index) => {
+                    const imageName = extractImageName(image.url); // Extract the name from the URL
+                    return (
+                      <div key={index} className="bg-white rounded-xl shadow-lg overflow-hidden">
+                        <div className="relative">
+                          <img
+                            src={image.url}
+                            alt={imageName} // Use the extracted name as alt text
+                            loading="lazy"
+                            className="w-full h-56 object-cover transition-transform duration-300 hover:scale-105"
+                          />
+                          {/* Delete Button - Positioned to the Right */}
+                          <button
+                            onClick={() => handleDeleteImage(image.url)}
+                            className="absolute top-2 right-2 p-2 bg-white rounded-full shadow-md hover:bg-gray-100 transition-all"
+                            style={{ background: 'none', border: 'none', cursor: 'pointer' }}
+                          >
+                            <FaTrash color="red" size={20} /> {/* Delete icon */}
+                          </button>
                         </div>
-                    ))
+                        <div className="p-4">
+                          <h3 className="text-lg font-semibold text-gray-800">
+                            {imageName} {/* Display the extracted name */}
+                          </h3>
+                          <p className="text-sm text-gray-600">{image.category}</p>
+                        </div>
+                      </div>
+                    );
+                  })
                 ) : (
-                    <div className="col-span-full text-center text-gray-500">
-                      Aucune image trouvée
-                    </div>
+                  <div className="col-span-full text-center text-gray-500">
+                    Aucune image trouvée
+                  </div>
                 )}
               </div>
-
-          )}
+            )}
         </div>
       </div>
 
