@@ -416,8 +416,8 @@ async def upload_file_for_search(
 
     # Recursively search through all subdirectories of the 2D folder
     for ext in image_extensions:
-        for potential_image_path in BASE_2D_PATH.rglob(f"{model_name}.{ext}"):  # Search recursively
-            if potential_image_path.exists():
+        for potential_image_path in BASE_2D_PATH.rglob(f"*.{ext}"):  # Search for all files with the current extension
+            if potential_image_path.stem.lower() == model_name:  # Case-insensitive comparison of file names
                 # Extract the category from the subdirectory name
                 category = potential_image_path.parent.name  # Get the parent directory name (category)
                 # Define the user-specific category directory
@@ -425,7 +425,7 @@ async def upload_file_for_search(
                 os.makedirs(user_category_dir, exist_ok=True)  # Ensure the directory exists
 
                 # Copy the 2D image to the user-specific category directory
-                destination_path = Path(user_category_dir) / f"{model_name}.{ext}"
+                destination_path = Path(user_category_dir) / potential_image_path.name
                 with open(potential_image_path, "rb") as src, open(destination_path, "wb") as dst:
                     dst.write(src.read())
 
@@ -441,8 +441,8 @@ async def upload_file_for_search(
         }
 
     return {
-        "message": f"File uploaded successfully, and 2D image {model_name}.{ext} saved to {user_category_dir}. Category: {category}",
-        "2d_image_path": f"/uploadSearch/{user_id}/{category}/{model_name}.{ext}",
+        "message": f"File uploaded successfully, and 2D image {potential_image_path.name} saved to {user_category_dir}. Category: {category}",
+        "2d_image_path": f"/uploadSearch/{user_id}/{category}/{potential_image_path.name}",
         "category": category,
     }
 
@@ -499,10 +499,39 @@ async def upload_file(file_path: str = Body(..., embed=True)):
     # Get similar images based on the uploaded image
     similar_images = getSimilarImages(image_path, str(obj_file_path))
     print("hi",similar_images)
+
     def map_obj_to_image_path(obj_path):
-        # Replace the .obj extension with .jpg or .png
-        return obj_path.replace(".obj", ".jpg")
-    # Construct URLs for similar images
+        """
+        Map an .obj file path to a corresponding .jpg or .png file in the /2D directory,
+        ignoring case sensitivity.
+        """
+        # Ensure BASE_2D_PATH is defined in the code (e.g., BASE_2D_PATH = Path('/path/to/2D'))
+        base_2d_dir = BASE_2D_PATH  # This should be the base path to the 2D folder
+        base_3d_dir = BASE_3D_MODELS_PATH  # This should be the base path to the 3D models folder
+
+        # Extract the category (parent directory) and the file name without extension from the obj path
+        obj_path = Path(obj_path)
+        category = obj_path.parent.name  # Get the category directory name (e.g., 'category')
+        target_name = obj_path.stem.lower()  # Get the base file name without extension, in lower case
+
+        # Construct the path to the corresponding 2D folder (2D/category)
+        target_2d_dir = base_2d_dir / category
+
+        # Check if the target directory exists
+        if not target_2d_dir.exists() or not target_2d_dir.is_dir():
+            return None
+
+        # Iterate through files in the target directory
+        for file in target_2d_dir.iterdir():
+            # Check if the file is an image and matches the target name (case-insensitive comparison)
+            if file.is_file() and file.suffix.lower() in [".jpg", ".png"]:
+                if file.stem.lower() == target_name:  # Case-insensitive comparison of the file name
+                    file = str(file).replace("2D folder", "")
+                    return str(file)
+
+        # Return None if no match is found
+        return None
+
     # Construct URLs for similar images
     image_urls = []
     for image in similar_images['modelpath']:
@@ -539,3 +568,8 @@ async def get_images_by_categories(category: str):
         images_path_by_categories = image_features[image_features['Category'] == category]["ImagePath"].tolist()
 
     return {"images": images_path_by_categories}
+
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run("main:app", host="127.0.0.1", port=8000, reload=True)
