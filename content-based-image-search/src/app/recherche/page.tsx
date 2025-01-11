@@ -20,6 +20,8 @@ export default function App() {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState(null);
   const [gaborImage, setGaborImage] = useState(null);
+  const [reduceMesh, setReduceMesh] = useState(false);
+
 
   const extractImageName = (url) => {
     return url.split("/").pop(); // Extracts the last part of the URL (e.g., "y5160_clay_vase.jpg")
@@ -94,8 +96,7 @@ export default function App() {
       const url = uploadedImage.file.url;
       const path = url.replace("http://localhost:8000/uploadSearch", ""); // Keep the `/uploadSearch` part
 
-      console.log("Sending path to backend:", path); // Debugging
-      const response = await axios.post("/upload", { file_path: path });
+      const response = await axios.post("/upload", { file_path: path, reduce_mesh: reduceMesh });
 
       const similarImages = response.data.similar_images || [];
       console.log("hi", response.data);
@@ -223,39 +224,49 @@ export default function App() {
           <div className="flex flex-col space-y-4">
             <div className="flex items-center space-x-4">
               <button
-                onClick={() => setIsModalOpen(true)}
-                className="px-4 py-2 border rounded-md text-black"
-                disabled={isLoading}
+                  onClick={() => setIsModalOpen(true)}
+                  className="px-4 py-2 border rounded-md text-black"
+                  disabled={isLoading}
               >
                 Choisir une image
               </button>
+              <div className="flex items-center space-x-2">
+                <input
+                    type="checkbox"
+                    id="reduceMesh"
+                    checked={reduceMesh}
+                    onChange={() => setReduceMesh(!reduceMesh)} // Toggle the state
+                    className="form-checkbox"
+                />
+                <label htmlFor="reduceMesh" className="text-black">Réduire le maillage</label>
+              </div>
               <button
-                onClick={handleSearch}
-                className={`px-4 py-2 rounded-md ${
-                  isLoading ? "bg-gray-400 cursor-not-allowed" : "bg-blue-500 text-white hover:bg-blue-600"
-                }`}
-                disabled={isLoading}
+                  onClick={handleSearch}
+                  className={`px-4 py-2 rounded-md ${
+                      isLoading ? "bg-gray-400 cursor-not-allowed" : "bg-blue-500 text-white hover:bg-blue-600"
+                  }`}
+                  disabled={isLoading}
               >
                 {isLoading ? "Recherche en cours..." : "Rechercher"}
               </button>
               <button
-                className="px-4 py-2 text-white rounded-md bg-blue-500 hover:bg-blue-600"
-                disabled={!desablerecherhcemethode}
-                onClick={handleReset}
+                  className="px-4 py-2 text-white rounded-md bg-blue-500 hover:bg-blue-600"
+                  disabled={!desablerecherhcemethode}
+                  onClick={handleReset}
               >
                 Clear
               </button>
             </div>
 
             {error && (
-              <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded relative" role="alert">
-                <span className="block sm:inline">{error}</span>
-              </div>
+                <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded relative" role="alert">
+                  <span className="block sm:inline">{error}</span>
+                </div>
             )}
 
             {uploadedImage && (
-              <div className="mt-4 flex justify-center items-center">
-                <div className="text-center">
+                <div className="mt-4 flex justify-center items-center">
+                  <div className="text-center">
                   <h3 className="text-lg font-semibold mb-2 text-black">Image Requête:</h3>
                   <img
                     src={uploadedImage.preview}

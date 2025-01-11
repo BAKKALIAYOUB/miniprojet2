@@ -30,6 +30,7 @@ BASE_3D_MODELS_PATH = Path("3D Models")
 UPLOAD_DIR = "upload"
 UPLOAD_DIR2 = "uploadSearch"
 FEATURES_PATH = './features.csv'
+FEATURE_PATH_WITH_REDUCE = './features_wih_reduce_mesh.csv'
 ALPHA = 0.8
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 os.makedirs(UPLOAD_DIR2, exist_ok=True)
@@ -201,7 +202,7 @@ async def delete_image(image_url: str, authorization: str = Header(None)):
         raise HTTPException(status_code=500, detail="Error deleting image")
 
 
-def getSimilarImages(imagePath, obj_file_path):
+def getSimilarImages(imagePath, obj_file_path, redcuce_mesh):
     """
     Get similar images from the database by comparing feature vectors.
     """
@@ -212,7 +213,11 @@ def getSimilarImages(imagePath, obj_file_path):
     carac = caracGlobale(obj_file_path).flatten()
 
     # Load the features of all images from the CSV file
-    images_features = pd.read_csv(FEATURES_PATH)
+    if redcuce_mesh is False:
+        images_features = pd.read_csv(FEATURES_PATH)
+    else:
+        images_features = pd.read_csv(FEATURE_PATH_WITH_REDUCE)
+
     features = images_features.iloc[:, 2:].values
 
     # Calculate the weighted distances
@@ -448,9 +453,13 @@ async def upload_file_for_search(
 
 
 
+class UploadRequest(BaseModel):
+    file_path: str
+    reduce_mesh: bool
 
 @app.post("/upload")
-async def upload_file(file_path: str = Body(..., embed=True)):
+async def upload_file(file_path: str = Body(..., embed=True), reduce_mesh: bool = Body(..., embed=True)):
+
     """
     Endpoint to process the file path, find the corresponding 3D model, and retrieve similar images.
     """
@@ -460,7 +469,6 @@ async def upload_file(file_path: str = Body(..., embed=True)):
     # Construct the full path for the uploaded image
     image_path = os.path.join(UPLOAD_DIR2, normalized_path.lstrip("/"))
 
-    print(f"Received file path: {image_path}")
 
     # Check if the image exists at the specified path
     if not os.path.exists(image_path):
@@ -494,11 +502,9 @@ async def upload_file(file_path: str = Body(..., embed=True)):
     if not obj_file_path:
         return {"error": f"No corresponding 3D model found for {base_name} in category {category}."}
 
-    print(f"Found 3D model: {obj_file_path}")
-    print("himage path",image_path)
+
     # Get similar images based on the uploaded image
-    similar_images = getSimilarImages(image_path, str(obj_file_path))
-    print("hi",similar_images)
+    similar_images = getSimilarImages(image_path, str(obj_file_path), redcuce_mesh=reduce_mesh)
 
     def map_obj_to_image_path(obj_path):
         """
