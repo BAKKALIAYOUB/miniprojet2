@@ -20,7 +20,12 @@ export default function App() {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState(null);
   const [gaborImage, setGaborImage] = useState(null);
-  const [reduceMesh, setReduceMesh] = useState(false);
+  const [reductionPercentage, setReductionPercentage] = useState("0%"); // Default to 0%
+
+
+  const handleReductionChange = (event) => {
+    setReductionPercentage(event.target.value);
+  };
 
 
   const extractImageName = (url) => {
@@ -96,7 +101,7 @@ export default function App() {
       const url = uploadedImage.file.url;
       const path = url.replace("http://localhost:8000/uploadSearch", ""); // Keep the `/uploadSearch` part
 
-      const response = await axios.post("/upload", { file_path: path, reduce_mesh: reduceMesh });
+      const response = await axios.post("/upload", { file_path: path, reduce_mesh: reductionPercentage });
 
       const similarImages = response.data.similar_images || [];
       console.log("hi", response.data);
@@ -231,14 +236,20 @@ export default function App() {
                 Choisir une image
               </button>
               <div className="flex items-center space-x-2">
-                <input
-                    type="checkbox"
-                    id="reduceMesh"
-                    checked={reduceMesh}
-                    onChange={() => setReduceMesh(!reduceMesh)} // Toggle the state
-                    className="form-checkbox"
-                />
-                <label htmlFor="reduceMesh" className="text-black">Réduire le maillage</label>
+                <label htmlFor="reductionPercentage" className="text-black">
+                  Pourcentage de réduction :
+                </label>
+                <select
+                    id="reductionPercentage"
+                    value={reductionPercentage}
+                    onChange={handleReductionChange}
+                    className="form-select border rounded px-2 py-1"
+                >
+                  <option value="0%">0%</option>
+                  <option value="20%">20%</option>
+                  <option value="50%">50%</option>
+                  <option value="70%">70%</option>
+                </select>
               </div>
               <button
                   onClick={handleSearch}
@@ -267,10 +278,10 @@ export default function App() {
             {uploadedImage && (
                 <div className="mt-4 flex justify-center items-center">
                   <div className="text-center">
-                  <h3 className="text-lg font-semibold mb-2 text-black">Image Requête:</h3>
-                  <img
-                    src={uploadedImage.preview}
-                    alt="Image Requête"
+                    <h3 className="text-lg font-semibold mb-2 text-black">Image Requête:</h3>
+                    <img
+                        src={uploadedImage.preview}
+                        alt="Image Requête"
                     className="w-80 h-80 object-cover mx-auto rounded-md shadow-lg"
                   />
                 </div>
@@ -289,12 +300,11 @@ export default function App() {
                     <div key={idx} className="bg-white shadow-lg rounded-md p-4">
                       <img
                         src={encodeURI(imageUrl)} // Encode the URL to handle spaces
-                        alt={image.title || "Image"}
+                        alt={image.Category || "Image"}
                         className="w-full h-80 object-cover rounded-md cursor-pointer"
                         onClick={() => openImageModal(image)
                         }
                       />
-                      <h3 className="text-center mt-2 text-black">{image.title || "Untitled"}</h3>
                       <h2 className="text-center mt-2">{image.distance || "N/A"}</h2>
                       <h2 className="text-center mt-2">{image.Category || "Unknown"}</h2>
                       <button

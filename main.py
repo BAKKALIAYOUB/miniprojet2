@@ -29,8 +29,11 @@ BASE_3D_MODELS_PATH = Path("3D Models")
 # Directory to save uploaded files
 UPLOAD_DIR = "upload"
 UPLOAD_DIR2 = "uploadSearch"
-FEATURES_PATH = './features.csv'
-FEATURE_PATH_WITH_REDUCE = './features_wih_reduce_mesh.csv'
+FEATURES_0 = './features.csv'
+FEATURE_20 = './features_20.csv'
+FEATURE_50 = './features_50.csv'
+FEATURE_70 = './features_70.csv'
+
 ALPHA = 0.8
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 os.makedirs(UPLOAD_DIR2, exist_ok=True)
@@ -213,10 +216,15 @@ def getSimilarImages(imagePath, obj_file_path, redcuce_mesh):
     carac = caracGlobale(obj_file_path).flatten()
 
     # Load the features of all images from the CSV file
-    if redcuce_mesh is False:
-        images_features = pd.read_csv(FEATURES_PATH)
-    else:
-        images_features = pd.read_csv(FEATURE_PATH_WITH_REDUCE)
+    if redcuce_mesh == "0%":
+        images_features = pd.read_csv(FEATURES_0)
+    elif redcuce_mesh == "20%":
+        images_features = pd.read_csv(FEATURE_20)
+    elif redcuce_mesh == "50%":
+        images_features = pd.read_csv(FEATURE_50)
+    elif redcuce_mesh == "70%":
+        images_features = pd.read_csv(FEATURE_70)
+
 
     features = images_features.iloc[:, 2:].values
 
@@ -453,12 +461,8 @@ async def upload_file_for_search(
 
 
 
-class UploadRequest(BaseModel):
-    file_path: str
-    reduce_mesh: bool
-
 @app.post("/upload")
-async def upload_file(file_path: str = Body(..., embed=True), reduce_mesh: bool = Body(..., embed=True)):
+async def upload_file(file_path: str = Body(..., embed=True), reduce_mesh: str = Body(..., embed=True)):
 
     """
     Endpoint to process the file path, find the corresponding 3D model, and retrieve similar images.
@@ -559,14 +563,14 @@ async def upload_file(file_path: str = Body(..., embed=True), reduce_mesh: bool 
 
 @app.get("/categories")
 async def get_categories():
-    images_features = pd.read_csv(FEATURES_PATH)
+    images_features = pd.read_csv(FEATURES_0)
     categories = images_features['Category'].unique().tolist()
     return categories
 
 
 @app.post("/categories/{category}")
 async def get_images_by_categories(category: str):
-    image_features = pd.read_csv(FEATURES_PATH)
+    image_features = pd.read_csv(FEATURES_0)
 
     if category == "Tout" or not category:
         images_path_by_categories = image_features["ImagePath"].tolist()

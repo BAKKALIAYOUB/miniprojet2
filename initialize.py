@@ -18,7 +18,7 @@ def process_images(base_folder, output_csv):
                     model_path = os.path.join(category_path, filename)
 
                     # Get the global features
-                    features = caracGlobale(mesh_path=model_path, reduce_factor=0.5)
+                    features = caracGlobale(mesh_path=model_path, reduce_factor=0.7)
                     mount_image_path = f"/{category}/{filename}"
                     # Append the data in the required format
                     data.append([mount_image_path, category] + features.flatten().tolist())
@@ -32,5 +32,5 @@ def process_images(base_folder, output_csv):
 if __name__ == "__main__":
     # Call the function with your folder and desired output file name
     base_folder = "./3D Models/"
-    output_csv = "features_wih_reduce_mesh.csv"
+    output_csv = "features_70.csv"
     process_images(base_folder, output_csv)
